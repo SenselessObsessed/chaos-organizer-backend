@@ -11,18 +11,19 @@ const cors = require('@koa/cors');
 const koaStatic = require('koa-static');
 
 const WS = require('ws');
+const { isNull } = require('util');
 
 const app = new Koa();
-const router = new Router();
 app.use(
 	koaBody({
-		urlencoded: true,
-		multipart: true,
 		json: true,
+		multipart: true,
+		urlencoded: true,
 	})
 );
-app.use(koaStatic(public));
+const router = new Router();
 app.use(cors());
+app.use(koaStatic(public));
 app.use(router.routes()).use(router.allowedMethods());
 
 const chats = [
@@ -51,6 +52,12 @@ const chats = [
 				type: 'video',
 				id: uuid.v4(),
 				body: 'video.mp4',
+			},
+			{
+				type: 'file',
+				id: uuid.v4(),
+				extension: 'rar',
+				body: '.babelrc',
 			},
 		],
 	},
@@ -99,6 +106,55 @@ router.post('/api/add-text-message', async ctx => {
 	ctx.response.body = { Status: true, id: newId, time: time };
 });
 
+router.post('/api/add-file', async ctx => {
+	const { filepath, originalFilename } = ctx.request.files.file;
+	const { chatId, type } = ctx.request.body;
+	const time = formatTime();
+
+	if (type !== 'file') {
+		const file = fs.readFileSync(filepath);
+		const id = uuid.v4();
+		const nameFileWithSplit = originalFilename.split('.');
+		const extension = nameFileWithSplit[nameFileWithSplit.length - 1];
+		fs.writeFileSync(`./public/${id}.${extension}`, file, 'binary');
+
+		const findChatId = chats.findIndex(chat => chat.id === chatId);
+		chats[findChatId].messages.push({
+			type: type,
+			time: time,
+			id: id,
+			body: `${id}.${extension}`,
+		});
+
+		const formatDate = formatTime();
+		ctx.response.body = {
+			Status: true,
+			idMessage: id,
+			extension: extension,
+			time: formatDate,
+		};
+	} else {
+		const file = fs.readFileSync(filepath);
+		const id = uuid.v4();
+		fs.writeFileSync(`./public/${originalFilename}`, file, 'binary');
+		const findChatId = chats.findIndex(chat => chat.id === chatId);
+		chats[findChatId].messages.push({
+			type: type,
+			time: time,
+			id: id,
+			body: `${originalFilename}`,
+		});
+
+		const formatDate = formatTime();
+		ctx.response.body = {
+			Status: true,
+			id: id,
+			idMessage: originalFilename,
+			time: formatDate,
+		};
+	}
+});
+
 router.put('/api/add-star', async ctx => {
 	const { idChat, idMessage } = ctx.request.body;
 
@@ -123,9 +179,7 @@ router.put('/api/remove-star', async ctx => {
 	ctx.response.body = { Status: true };
 });
 
-// add logic
 router.put('/api/add-pin', async ctx => {
-	console.log(chats);
 	const { idChat, idMessage, previousPinId } = ctx.request.body;
 
 	const findChatId = chats.findIndex(chat => chat.id === idChat);
@@ -146,7 +200,6 @@ router.put('/api/add-pin', async ctx => {
 	ctx.response.body = { Status: true };
 });
 
-// add logic
 router.put('/api/remove-pin', async ctx => {
 	const { idChat, idMessage } = ctx.request.body;
 
@@ -160,11 +213,56 @@ router.put('/api/remove-pin', async ctx => {
 	ctx.response.body = { Status: true };
 });
 
-router.get('/api/import/:id', async ctx => {
-	const { id } = ctx.request.params;
+router.get('/api/import/:id/:messageId', async ctx => {
+	const { id, messageId } = ctx.request.params;
 	const currChat = chats.findIndex(chat => chat.id === id);
+
 	if (currChat !== -1) {
-		ctx.response.body = chats[currChat].messages;
+		if (messageId === 'null') {
+			const chatLen = chats[currChat].messages.length;
+			if (chatLen === 0) {
+				ctx.response.body = { pinId: null, messages: [], pinBody: null };
+			} else if (chatLen < 10) {
+				let pinBody, pinId;
+				if (chats[currChat].pin) {
+					pinId = chats[currChat].pin;
+					const findIdxPin = chats[currChat].messages.findIndex(
+						msg => msg.id === chats[currChat].pin
+					);
+					pinBody = chats[currChat].messages[findIdxPin].body;
+				} else {
+					pinBody = null;
+					pinId = null;
+				}
+				ctx.response.body = {
+					pinId: pinId,
+					messages: chats[currChat].messages,
+					pinBody: pinBody,
+				};
+			} else {
+				let pinBody, pinId;
+				if (chats[currChat].pin) {
+					pinId = chats[currChat].pin;
+					const findIdxPin = chats[currChat].messages.findIndex(
+						msg => msg.id === chats[currChat].pin
+					);
+					pinBody = chats[currChat].messages[findIdxPin].body;
+				} else {
+					pinBody = null;
+					pinId = null;
+				}
+
+				const lastTenMsgs = chatLen - 10;
+				const result = chats[currChat].messages.slice(lastTenMsgs);
+
+				ctx.response.body = {
+					pinId: pinId,
+					messages: result,
+					pinBody: pinBody,
+				};
+			}
+		}
+		// TODO
 	} else {
 		ctx.response.status = 404;
 		ctx.response.body = 'Not found chat';
