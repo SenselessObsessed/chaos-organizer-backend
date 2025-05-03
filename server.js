@@ -10,9 +10,6 @@ const uuid = require('uuid');
 const cors = require('@koa/cors');
 const koaStatic = require('koa-static');
 
-const WS = require('ws');
-const { isNull } = require('util');
-
 const app = new Koa();
 app.use(
 	koaBody({
@@ -26,42 +23,7 @@ app.use(cors());
 app.use(koaStatic(public));
 app.use(router.routes()).use(router.allowedMethods());
 
-const chats = [
-	{
-		id: 3,
-		pin: 40, // id Message or null
-		messages: [
-			{
-				type: 'text',
-				id: uuid.v4(),
-				star: true, // favorites
-				crypto: false, // crypto message
-				body: 'Hello World',
-			},
-			{
-				type: 'img',
-				id: uuid.v4(),
-				body: 'cat.jpg',
-			},
-			{
-				type: 'audio',
-				id: uuid.v4(),
-				body: 'audio.mp3',
-			},
-			{
-				type: 'video',
-				id: uuid.v4(),
-				body: 'video.mp4',
-			},
-			{
-				type: 'file',
-				id: uuid.v4(),
-				extension: 'rar',
-				body: '.babelrc',
-			},
-		],
-	},
-];
+const chats = [];
 
 function formatTime() {
 	const date = new Date();
@@ -213,6 +175,63 @@ router.put('/api/remove-pin', async ctx => {
 	ctx.response.body = { Status: true };
 });
 
+router.get('/api/search-messages/:idChat/:value', async ctx => {
+	const { idChat, value } = ctx.request.params;
+	const currChatIdx = chats.findIndex(chat => chat.id === idChat);
+
+	const messagesText = chats[currChatIdx].messages.filter(
+		msg => msg.type === 'text'
+	);
+	const resultArr = messagesText.filter(msg => msg.body.startsWith(value));
+	ctx.response.body = resultArr;
+});
+
+router.get('/api/:idChat/all-star', async ctx => {
+	const { idChat } = ctx.request.params;
+	const currChatIdx = chats.findIndex(chat => chat.id === idChat);
+	const result = chats[currChatIdx].messages.filter(msg => msg.star === true);
+
+	ctx.response.body = result;
+});
+
+router.get('/api/:idChat/all-audio', async ctx => {
+	const { idChat } = ctx.request.params;
+	const currChatIdx = chats.findIndex(chat => chat.id === idChat);
+	const result = chats[currChatIdx].messages.filter(
+		msg => msg.type === 'audio'
+	);
+
+	ctx.response.body = result;
+});
+
+router.get('/api/:idChat/all-images', async ctx => {
+	const { idChat } = ctx.request.params;
+	const currChatIdx = chats.findIndex(chat => chat.id === idChat);
+	const result = chats[currChatIdx].messages.filter(
+		msg => msg.type === 'image'
+	);
+
+	ctx.response.body = result;
+});
+
+router.get('/api/:idChat/all-video', async ctx => {
+	const { idChat } = ctx.request.params;
+	const currChatIdx = chats.findIndex(chat => chat.id === idChat);
+	const result = chats[currChatIdx].messages.filter(
+		msg => msg.type === 'video'
+	);
+
+	ctx.response.body = result;
+});
+
+router.get('/api/:idChat/all-files', async ctx => {
+	const { idChat } = ctx.request.params;
+	const currChatIdx = chats.findIndex(chat => chat.id === idChat);
+	const result = chats[currChatIdx].messages.filter(msg => msg.type === 'file');
+
+	ctx.response.body = result;
+});
+
 router.get('/api/import/:id/:messageId', async ctx => {
 	const { id, messageId } = ctx.request.params;
 	const currChat = chats.findIndex(chat => chat.id === id);
@@ -221,7 +240,12 @@ router.get('/api/import/:id/:messageId', async ctx => {
 		if (messageId === 'null') {
 			const chatLen = chats[currChat].messages.length;
 			if (chatLen === 0) {
-				ctx.response.body = { pinId: null, messages: [], pinBody: null };
+				ctx.response.body = {
+					status: true,
+					pinId: null,
+					messages: [],
+					pinBody: null,
+				};
 			} else if (chatLen < 10) {
 				let pinBody, pinId;
 				if (chats[currChat].pin) {
@@ -235,6 +259,7 @@ router.get('/api/import/:id/:messageId', async ctx => {
 					pinId = null;
 				}
 				ctx.response.body = {
+					status: true,
 					pinId: pinId,
 					messages: chats[currChat].messages,
 					pinBody: pinBody,
@@ -256,16 +281,29 @@ router.get('/api/import/:id/:messageId', async ctx => {
 				const result = chats[currChat].messages.slice(lastTenMsgs);
 
 				ctx.response.body = {
+					status: true,
 					pinId: pinId,
 					messages: result,
 					pinBody: pinBody,
 				};
 			}
+		} else {
+			const msgNum = chats[currChat].messages.findIndex(
+				msg => msg.id === messageId
+			);
+			if (msgNum === 0) {
+				ctx.response.body = { status: true, messages: [] };
+			} else if (msgNum < 10) {
+				const messages = chats[currChat].messages.slice(0, msgNum);
+				ctx.response.body = { status: true, messages: messages };
+			} else {
+				const messages = chats[currChat].messages.slice(msgNum - 10, msgNum);
+				ctx.response.body = { status: true, messages: messages };
+			}
 		}
 		// TODO
 	} else {
-		ctx.response.status = 404;
-		ctx.response.body = 'Not found chat';
+		ctx.response.body = { status: false };
 	}
 });
 
